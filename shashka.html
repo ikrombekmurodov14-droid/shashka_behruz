@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shashka</title>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0b;--tx:#ececee;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--bg);overflow:hidden;font-family:Jost,'Segoe UI',Arial,sans-serif;color:var(--tx);user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:rgba(10,10,11,.9);padding:24px;gap:20px}
+#ov.off{display:none}
+h1{margin:0;font-weight:500;font-size:clamp(40px,10vw,92px);line-height:1;letter-spacing:.3em;padding-left:.3em;color:#f2f2f4}
+#sub{font-size:clamp(13px,2.6vw,16px);letter-spacing:.08em;line-height:1.7;max-width:440px;color:#8d8d94}
+#dl{font-size:12px;letter-spacing:.25em;color:#6d6d74}
+#dif,#btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+button{font:inherit;font-weight:500;font-size:15px;letter-spacing:.22em;padding:14px 34px 14px 38px;color:#ececee;background:transparent;border:1px solid #5a5a60;border-radius:0;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+button:hover,button:focus-visible{background:#ececee;color:#0a0a0b;border-color:#ececee;outline:none}
+#dif button{font-size:12px;padding:9px 20px 9px 24px;border-color:#303034;color:#8d8d94}
+#dif button.on{border-color:#ececee;color:#ececee}
+#mn{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:12px;padding:8px 16px 8px 20px;font-size:11px;display:none;z-index:2}
+#mn.on{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="mn" tabindex="-1">MENU</button>
+<div id="ov">
+  <h1 id="ti">SHASHKA</h1>
+  <div id="sub">Classic checkers. Captures are mandatory, kings move any distance. White moves first.</div>
+  <div id="dl">BOT DIFFICULTY</div>
+  <div id="dif"><button data-d="0">EASY</button><button data-d="1">NORMAL</button><button data-d="2">HARD</button></div>
+  <div id="btns"><button id="b1">VS BOT</button><button id="b2">2 PLAYERS</button></div>
+</div>
+<script>
+//LOGIC
+const D=[[-1,-1],[-1,1],[1,-1],[1,1]],inb=(r,c)=>r>=0&&r<8&&c>=0&&c<8,sd=v=>v>0?1:v<0?-1:0;
+function caps(b,r,c,k,s,taken,path,cp,out){
+  let found=false;
+  for(const[dr,dc]of D){
+    let rr=r+dr,cc=c+dc;
+    if(k)while(inb(rr,cc)&&b[rr][cc]===0){rr+=dr;cc+=dc}
+    if(!inb(rr,cc)||sd(b[rr][cc])!==-s||taken.has(rr*8+cc))continue;
+    let lr=rr+dr,lc=cc+dc;const lands=[];
+    while(inb(lr,lc)&&b[lr][lc]===0){lands.push([lr,lc]);if(!k)break;lr+=dr;lc+=dc}
+    for(const[ar,ac]of lands){found=true;taken.add(rr*8+cc);
+      caps(b,ar,ac,k||(s===1?ar===0:ar===7),s,taken,[...path,[ar,ac]],[...cp,[rr,cc]],out);taken.delete(rr*8+cc)}
+  }
+  if(!found&&path.length>1)out.push({path,caps:cp,king:k});
+}
+function moves(b,s){
+  const all=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const v=b[r][c];if(sd(v)!==s)continue;
+    b[r][c]=0;const out=[];caps(b,r,c,Math.abs(v)===2,s,new Set(),[[r,c]],[],out);b[r][c]=v;
+    for(const o of out)all.push({from:[r,c],path:o.path,caps:o.caps,king:o.king})}
+  if(all.length)return all;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const v=b[r][c];if(sd(v)!==s)continue;const k=Math.abs(v)===2;
+    for(const[dr,dc]of D){if(!k&&dr!==-s)continue;let rr=r+dr,cc=c+dc;
+      while(inb(rr,cc)&&b[rr][cc]===0){all.push({from:[r,c],path:[[r,c],[rr,cc]],caps:[],king:k||(s===1?rr===0:rr===7)});if(!k)break;rr+=dr;cc+=dc}}}
+  return all;
+}
+function apply(b,m){const[r,c]=m.from;let v=b[r][c];b[r][c]=0;for(const[a,d]of m.caps)b[a][d]=0;
+  const[er,ec]=m.path[m.path.length-1];if(m.king)v=Math.sign(v)*2;b[er][ec]=v}
+function ev(b){let v=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const x=b[r][c];if(!x)continue;const s=sd(x);v+=s*(Math.abs(x)===2?2.6:1+(x>0?7-r:r)*.04)}return v}
+function mm(b,s,d,a,bt){const ms=moves(b,s);if(!ms.length)return s===1?-99:99;if(!d)return ev(b);
+  let best=s===1?-1e9:1e9;
+  for(const m of ms){const nb=b.map(r=>r.slice());apply(nb,m);const v=mm(nb,-s,d-1,a,bt);
+    if(s===1){best=Math.max(best,v);a=Math.max(a,v)}else{best=Math.min(best,v);bt=Math.min(bt,v)}if(bt<=a)break}
+  return best}
+function newBoard(){const b=Array.from({length:8},()=>Array(8).fill(0));for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2){if(r<3)b[r][c]=-1;if(r>4)b[r][c]=1}return b}
+//ENDLOGIC
+const cv=document.getElementById('c'),x=cv.getContext('2d'),ov=document.getElementById('ov'),mn=document.getElementById('mn');
+const F="Jost,'Segoe UI',Arial,sans-serif";
+let W,H,N,cell,ox,oy,bd=newBoard(),turn=1,legal=[],sel=null,an=null,last=null,playing=false,mode=2,diff=0;
+function rs(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;x.setTransform(d,0,0,d,0,0);
+  N=Math.max(200,Math.min(W-40,H-170));cell=N/8;ox=(W-N)/2;oy=(H-N)/2+8}
+addEventListener('resize',rs);
+function show(t,s,note){document.getElementById('ti').textContent=t;document.getElementById('sub').textContent=s;ov.classList.remove('off');mn.classList.remove('on')}
+function showMenu(){playing=false;an=null;show('SHASHKA','Classic checkers. Captures are mandatory, kings move any distance. White moves first.')}
+function start(m){mode=m||mode;bd=newBoard();turn=1;sel=null;an=null;last=null;playing=true;ov.classList.add('off');mn.classList.add('on');refresh()}
+function refresh(){legal=moves(bd,turn);
+  if(!legal.length){playing=false;const w=-turn;setTimeout(()=>show(mode==1?(w===1?'YOU WIN':'BOT WINS'):(w===1?'WHITE WINS':'BLACK WINS'),'Pick a mode to play again.'),700);return}
+  if(mode==1&&turn===-1)setTimeout(botMove,450)}
+function botMove(){if(!playing||turn!==-1||an)return;let m;
+  if(diff===0)m=legal[Math.random()*legal.length|0];
+  else{let best=1e9;const d=diff===1?2:4;for(const c of legal){const nb=bd.map(r=>r.slice());apply(nb,c);const v=mm(nb,1,d-1,-1e9,1e9)+Math.random()*.05;if(v<best){best=v;m=c}}}
+  an={m,t:0,v:bd[m.from[0]][m.from[1]]}}
+function finish(){const m=an.m;apply(bd,m);last=[m.from,m.path[m.path.length-1]];an=null;sel=null;turn=-turn;refresh()}
+cv.addEventListener('pointerdown',e=>{if(!playing||an||!(mode==2||turn===1))return;
+  const r=Math.floor((e.clientY-oy)/cell),c=Math.floor((e.clientX-ox)/cell);if(!inb(r,c))return;
+  if(sel){const m=legal.find(m=>m.from[0]===sel[0]&&m.from[1]===sel[1]&&m.path[m.path.length-1][0]===r&&m.path[m.path.length-1][1]===c);if(m){an={m,t:0,v:bd[m.from[0]][m.from[1]]};return}}
+  sel=legal.some(m=>m.from[0]===r&&m.from[1]===c)?[r,c]:null});
+document.getElementById('b1').onclick=()=>start(1);document.getElementById('b2').onclick=()=>start(2);
+mn.onmousedown=e=>e.preventDefault();mn.onclick=showMenu;
+const setD=d=>{diff=d;document.querySelectorAll('#dif button').forEach(b=>b.classList.toggle('on',+b.dataset.d===d))};
+document.querySelectorAll('#dif button').forEach(b=>b.onclick=()=>setD(+b.dataset.d));setD(0);
+addEventListener('keydown',e=>{if(e.code==='Escape'&&playing)showMenu();if(e.code==='Enter'&&!playing&&!e.repeat)start()});
+function piece(cx,cy,v,sc=1){const r=cell*.39*sc,w=v>0;
+  x.beginPath();x.arc(cx,cy+r*.12,r,0,7);x.fillStyle='rgba(0,0,0,.5)';x.fill();
+  const g=x.createRadialGradient(cx-r*.3,cy-r*.35,r*.1,cx,cy,r);
+  if(w){g.addColorStop(0,'#ffffff');g.addColorStop(1,'#c4c4ca')}else{g.addColorStop(0,'#46464c');g.addColorStop(1,'#0c0c0e')}
+  x.beginPath();x.arc(cx,cy,r,0,7);x.fillStyle=g;x.fill();x.lineWidth=1.5;x.strokeStyle=w?'#8e8e95':'#7a7a82';x.stroke();
+  x.beginPath();x.arc(cx,cy,r*.68,0,7);x.strokeStyle=w?'#b0b0b8':'#34343a';x.stroke();
+  if(Math.abs(v)===2){x.fillStyle=w?'#2a2a2e':'#e6e6ea';x.beginPath();const u=r*.5;
+    x.moveTo(cx-u*.6,cy+u*.4);x.lineTo(cx-u*.6,cy-u*.35);x.lineTo(cx-u*.3,cy-u*.05);x.lineTo(cx,cy-u*.5);x.lineTo(cx+u*.3,cy-u*.05);x.lineTo(cx+u*.6,cy-u*.35);x.lineTo(cx+u*.6,cy+u*.4);x.closePath();x.fill()}}
+function draw(){
+  x.fillStyle='#0a0a0b';x.fillRect(0,0,W,H);
+  x.fillStyle='#161618';x.fillRect(ox-10,oy-10,N+20,N+20);x.strokeStyle='#3a3a3e';x.lineWidth=1;x.strokeRect(ox-10.5,oy-10.5,N+21,N+21);
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){x.fillStyle=(r+c)%2?'#070708':'#2c2c30';x.fillRect(ox+c*cell,oy+r*cell,cell+.5,cell+.5)}
+  if(last)for(const[r,c]of last){x.fillStyle='rgba(255,255,255,.09)';x.fillRect(ox+c*cell,oy+r*cell,cell,cell)}
+  x.font='500 '+Math.max(9,cell*.17)+'px '+F;x.fillStyle='#6d6d74';x.textAlign='center';x.textBaseline='middle';
+  for(let i=0;i<8;i++){x.fillText('abcdefgh'[i],ox+i*cell+cell/2,oy+N+cell*.22);x.fillText(8-i,ox-cell*.22,oy+i*cell+cell/2)}
+  const mine=playing&&!an&&(mode==2||turn===1);
+  if(mine&&!sel&&legal.length&&legal[0].caps.length){x.strokeStyle='rgba(255,255,255,.4)';x.lineWidth=2;x.setLineDash([4,4]);
+    for(const m of legal){x.beginPath();x.arc(ox+m.from[1]*cell+cell/2,oy+m.from[0]*cell+cell/2,cell*.45,0,7);x.stroke()}x.setLineDash([])}
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){const v=bd[r][c];if(!v||(an&&an.m.from[0]===r&&an.m.from[1]===c))continue;piece(ox+c*cell+cell/2,oy+r*cell+cell/2,v)}
+  if(sel){x.strokeStyle='#fff';x.lineWidth=2;x.strokeRect(ox+sel[1]*cell+1,oy+sel[0]*cell+1,cell-2,cell-2);
+    for(const m of legal)if(m.from[0]===sel[0]&&m.from[1]===sel[1]){const e=m.path[m.path.length-1];x.beginPath();x.arc(ox+e[1]*cell+cell/2,oy+e[0]*cell+cell/2,cell*.13,0,7);x.fillStyle='rgba(255,255,255,.75)';x.fill()}}
+  if(an){const p=an.m.path,dur=.24,sg=Math.min(p.length-2,Math.floor(an.t/dur)),f=Math.min(1,(an.t-sg*dur)/dur),a=p[sg],b=p[sg+1];
+    piece(ox+(a[1]+(b[1]-a[1])*f)*cell+cell/2,oy+(a[0]+(b[0]-a[0])*f)*cell+cell/2,an.v,1.06)}
+  if(playing||bd.some(r=>r.some(v=>v))){let w=0,k=0;for(const r of bd)for(const v of r){if(v>0)w++;if(v<0)k++}
+    const msg=!playing?'':mode==1?(turn===1?'Your move':'Bot is thinking'):(turn===1?'White to move':'Black to move');
+    x.textAlign='center';x.font='500 '+Math.max(14,cell*.26)+'px '+F;x.fillStyle='#ececee';x.fillText(msg,W/2,oy-34);
+    x.font='400 '+Math.max(12,cell*.2)+'px '+F;x.fillStyle='#8d8d94';x.fillText('White '+w+'     Black '+k,W/2,oy+N+cell*.62)}
+}
+let lt=performance.now();
+function loop(n){const dt=Math.min(.05,(n-lt)/1000);lt=n;if(an){an.t+=dt;if(an.t>=.24*(an.m.path.length-1))finish()}draw();requestAnimationFrame(loop)}
+rs();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
